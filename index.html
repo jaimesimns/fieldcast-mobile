@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Fieldcast — an aural augmented reality experience for ecological storytelling around Maastricht.">
+<title>Fieldcast — Every layer has a story</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ═══════════════ HOME ═══════════════ -->
+  <section class="view on" id="v-home" data-screen-label="Home">
+    <div class="home-nav">
+      <div class="home-nav-item" data-go="home">Home</div>
+      <div class="home-nav-item" id="navExperiences">Experiences</div>
+      <div class="home-nav-item" data-go="about">About</div>
+    </div>
+
+    <div class="home-scroll" id="homeScroll">
+      <div class="hero">
+        <div class="hero-bg" style="background-image:url('assets/home-hero.png')"></div>
+        <div class="hero-copy">
+          <div class="hero-title">Every layer<br>has a story.</div>
+          <div class="hero-lead">Experience geology, ecology, memory, and material futures around <span id="cityNameHero">Maastricht</span> through creative soundscapes.</div>
+          <button class="gps-cta" id="btnGps"><span id="gpsCtaLabel">Enable GPS</span></button>
+          <div class="hero-note">Best experienced with GPS &amp; headphones.</div>
+        </div>
+      </div>
+
+      <div class="cards-section" id="cardsSection">
+        <div class="eyebrow">Experiences</div>
+        <div class="cards" id="cards">
+          <div class="card skel"></div>
+          <div class="card skel"></div>
+        </div>
+      </div>
+
+      <div class="home-foot" data-go="about">© The Plant 2026</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ EXPERIENCE LANDING ═══════════════ -->
+  <section class="view" id="v-exp" data-screen-label="Experience Landing">
+    <button class="pill-icon-btn floating top-left" data-go="home" aria-label="Back">←</button>
+    <button class="pill-btn floating top-right" data-go="about">About</button>
+
+    <div class="exp-scroll">
+      <div class="exp-hero" id="expHero"></div>
+      <div class="exp-body">
+        <div class="exp-title" id="expTitle"></div>
+        <div class="exp-intro" id="expIntro"></div>
+
+        <div class="eyebrow" style="margin-bottom:16px">How it Works</div>
+        <div class="how-it-works" id="howItWorks"></div>
+
+        <button class="dark-pill-btn" id="btnOpenMap">Open Map</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ LIVE MAP ═══════════════ -->
+  <section class="view" id="v-map" data-screen-label="Live Map">
+    <button class="pill-icon-btn floating top-left" id="mapBack" aria-label="Back">←</button>
+    <div class="pill-btn floating map-title" id="mapExpTitle"></div>
+
+    <div id="map"></div>
+
+    <div class="sheet" id="sheet">
+      <div class="sheet-idle" id="sheetIdle">
+        <div class="sheet-grab"></div>
+        <div class="sheet-idle-title">Waiting for the next location…</div>
+        <div class="sheet-idle-sub" id="sheetIdleSub">Walk toward a marker.</div>
+      </div>
+
+      <div class="sheet-stop" id="sheetStop">
+        <div class="sheet-stop-head" id="sheetStopHead">
+          <div class="sheet-grab"></div>
+          <div class="sheet-stop-row">
+            <div class="sheet-stop-title" id="stopTitle"></div>
+            <button class="sheet-close" id="btnCloseStop" aria-label="Close">✕</button>
+          </div>
+          <div class="player-row">
+            <button class="play-btn" id="btnPlayStop" aria-label="Play"><span id="playIcon" class="play-icon"></span></button>
+            <div class="player-meta">
+              <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+              <div class="player-times"><span id="curTime">0:00</span><span id="durTime">0:00</span></div>
+            </div>
+          </div>
+          <div class="stop-excerpt" id="stopExcerpt"></div>
+        </div>
+        <div class="sheet-more" id="sheetMore">Show more ⌄</div>
+        <div class="sheet-body" id="sheetBody"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ ABOUT ═══════════════ -->
+  <section class="view" id="v-about" data-screen-label="About">
+    <button class="pill-icon-btn floating top-left" data-go="home" aria-label="Back">←</button>
+    <div class="about-scroll">
+      <div class="about-wrap">
+        <div class="about-title">About</div>
+        <p class="about-p">Fieldcast is a location-based listening experience exploring how landscapes carry stories across geological, ecological, and human timescales.</p>
+        <p class="about-p">As visitors move around <span class="cityName">Maastricht</span>, GPS automatically triggers audio soundscapes connected to their surroundings.</p>
+        <p class="about-p" style="margin-bottom:36px">Rather than following a fixed route, visitors discover stories by entering listening zones.</p>
+
+        <div class="eyebrow" style="margin-bottom:14px">Experiences</div>
+        <div class="about-list" id="aboutExpList"></div>
+
+        <div class="eyebrow" style="margin:36px 0 14px">Before You Begin</div>
+        <div class="checklist">
+          <div class="check-row"><span class="check-dot"></span><span>Wear headphones</span></div>
+          <div class="check-row"><span class="check-dot"></span><span>Enable location services</span></div>
+          <div class="check-row"><span class="check-dot"></span><span>Stay aware of your surroundings</span></div>
+          <div class="check-row"><span class="check-dot"></span><span>Audio plays automatically once you are inside listening zones</span></div>
+        </div>
+
+        <div class="eyebrow" style="margin:36px 0 14px">Collaborators</div>
+        <p class="about-p" style="margin-bottom:0">This project was developed by Jaime (Jay) Simons and Claartje Rasterhoff. It was supported by The Playground and Laboratory for New Technologies, the Maastricht Centre for Arts and Heritage, Conservation and Heritage, and the Faculty of Arts and Social Sciences at Maastricht University.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
