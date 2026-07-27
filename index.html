@@ -353,7 +353,7 @@ button{font:inherit;color:inherit;background:none;border:none;padding:0}
         </div>
 
         <div class="eyebrow" style="margin:36px 0 14px">Collaborators</div>
-        <p class="about-p" style="margin-bottom:0">This project was developed by Jaime (Jay) Simons and Claartje Rasterhoff. It was supported by The Playground and Laboratory for New Technologies, the Maastricht Centre for Arts and Heritage, Conservation and Heritage, and the Faculty of Arts and Social Sciences at Maastricht University.</p>
+        <p class="about-p" style="margin-bottom:0">This project was developed by Jaime (Jay) Simons (audio & app design) and Claartje Rasterhoff (text & content). It was supported by The Playground and Laboratory for New Technologies, the Maastricht Centre for Arts and Heritage, Conservation and Heritage, and the Faculty of Arts and Social Sciences at Maastricht University.</p>
       </div>
     </div>
   </section>
@@ -363,20 +363,11 @@ button{font:inherit;color:inherit;background:none;border:none;padding:0}
 <div class="toast" id="toast"></div>
 
 <script>
+   
 /* ═══════════════════════════════════════════════════════════
    Fieldcast — visitor app
-   Single-file build: no build step, no separate CSS/JS files.
-   Content (experiences + stops) comes from Supabase so it can be
-   edited/extended without a redeploy. Real geolocation drives a
-   continuous core/fade audio-volume crossfade per stop, using the
-   same radius/fade_radius/vol_center/vol_edge fields the admin
-   app (../admin/index.html) reads and writes.
    ═══════════════════════════════════════════════════════════ */
 
-/* This is Supabase's "anon" public key, not a secret — it's designed to be
-   embedded in client-side code exactly like this. Read/write access is
-   governed by the row-level security policies in supabase/schema.sql, not
-   by keeping this key hidden. Same project/key the admin app uses. */
 const SUPABASE_URL = 'https://gplxpnijrfnskakujtiu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwbHhwbmlqcmZuc2tha3VqdGl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTkwNDcsImV4cCI6MjA4ODc5NTA0N30.nb24yCoTjhVBiifnkmZUOIYjkn3Xk4dqKyHPXtEBO5o';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -390,12 +381,6 @@ const HOW_IT_WORKS = [
   'Audio starts automatically when you enter a listening zone',
 ];
 
-/* Audio zone model matches the admin app's crossfade exactly: full volume
-   (vol_center) inside the core `radius`, ramping linearly down to vol_edge
-   by `fade_radius`, silent beyond it. See zoneVolume() below. */
-
-/* close the sheet only once you're this much further out than the
-   fade radius, so GPS jitter right at the edge doesn't flap it */
 const EXIT_HYSTERESIS = 1.15;
 
 const $ = (id) => document.getElementById(id);
