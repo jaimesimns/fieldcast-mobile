@@ -22,7 +22,7 @@
    ═══════════════════════════════════════════════════════════ */
 @font-face{
   font-family:'FS Bodrum Sans';
-  src:url('fonts/BodrumSans-14Regular.woff2') format('truetype');
+  src:url('fonts/FSBodrumSans-14Regular.ttf') format('truetype');
   font-weight:400 700; font-style:normal; font-display:swap;
 }
 
@@ -387,11 +387,12 @@ const HOW_IT_WORKS = [
   'Audio starts automatically when you enter a listening zone',
 ];
 
-/* volume ramps 0 -> DROPOFF_VOL between bleed and dropoff radii,
-   then DROPOFF_VOL -> 1 between dropoff and high-point radii */
-const DROPOFF_VOL = 0.6;
+/* Audio zone model matches the admin app's crossfade exactly: full volume
+   (vol_center) inside the core `radius`, ramping linearly down to vol_edge
+   by `fade_radius`, silent beyond it. See zoneVolume() below. */
+
 /* close the sheet only once you're this much further out than the
-   bleed radius, so GPS jitter right at the edge doesn't flap it */
+   fade radius, so GPS jitter right at the edge doesn't flap it */
 const EXIT_HYSTERESIS = 1.15;
 
 const $ = (id) => document.getElementById(id);
@@ -407,7 +408,7 @@ const S = {
   lat: null, lon: null,
   gpsOn: false, gpsDenied: false, watchId: null,
   map: null, userMarker: null,
-  stopLayers: {}, // id -> { marker, bleed, dropoff, highpoint }
+  stopLayers: {}, // id -> { marker, fade, core }
   activeStopId: null,
   dismissedStopId: null,
   expanded: false,
@@ -493,12 +494,12 @@ function renderCards() {
   }
   el.innerHTML = S.experiences.map((e) => {
     const ready = e.status === 'published';
-    const img = e.hero_image_url
-      ? `background-image:url('${esc(e.hero_image_url)}')`
+    const img = e.cover_url
+      ? `background-image:url('${esc(e.cover_url)}')`
       : `background-image:repeating-linear-gradient(135deg,#FFFFFF,#FFFFFF 12px,rgba(199,49,194,0.06) 12px,rgba(199,49,194,0.06) 24px)`;
     return `<div class="card ${ready ? '' : 'not-ready'}" data-exp="${esc(e.id)}">
       <div class="card-img" style="${img}">
-        ${!e.hero_image_url ? `<span class="card-img-label">${esc(e.location_label || '')}</span>` : ''}
+        ${!e.cover_url ? `<span class="card-img-label">${esc(e.location_label || '')}</span>` : ''}
         ${!ready ? `<div class="card-badge">Coming soon</div>` : ''}
       </div>
       <div class="card-body">
@@ -533,8 +534,8 @@ function openExperience(id) {
   S.currentExp = exp;
   S.currentStops = stopsOf(exp);
 
-  $('expHero').style.backgroundImage = exp.hero_image_url
-    ? `url('${exp.hero_image_url}')`
+  $('expHero').style.backgroundImage = exp.cover_url
+    ? `url('${exp.cover_url}')`
     : `repeating-linear-gradient(135deg,#DDF8F8,#DDF8F8 14px,#FFFFFF 14px,#FFFFFF 28px)`;
   $('expTitle').textContent = exp.title || '';
   $('expIntro').textContent = exp.description || exp.tagline || '';
@@ -620,16 +621,14 @@ function initMap() {
 
 function drawStops() {
   Object.values(S.stopLayers).forEach((l) => {
-    S.map.removeLayer(l.marker); S.map.removeLayer(l.bleed);
-    S.map.removeLayer(l.dropoff); S.map.removeLayer(l.highpoint);
+    S.map.removeLayer(l.marker); S.map.removeLayer(l.fade); S.map.removeLayer(l.core);
   });
   S.stopLayers = {};
 
   S.currentStops.forEach((m, i) => {
     const ll = [m.lat, m.lon];
-    const bleed = L.circle(ll, { radius: m.bleed_radius_m || 40, color: '#6EDFE3', weight: 1.5, dashArray: '4 5', opacity: 0.55, fillOpacity: 0 }).addTo(S.map);
-    const dropoff = L.circle(ll, { radius: m.dropoff_radius_m || 25, color: '#6EDFE3', weight: 1.5, opacity: 0.55, fillColor: '#6EDFE3', fillOpacity: 0.1 }).addTo(S.map);
-    const highpoint = L.circle(ll, { radius: m.highpoint_radius_m || 12, color: '#6EDFE3', weight: 0, fillColor: '#6EDFE3', fillOpacity: 0.18 }).addTo(S.map);
+    const fade = L.circle(ll, { radius: m.fade_radius || 80, color: '#6EDFE3', fillColor: '#6EDFE3', weight: 1.5, dashArray: '5 6', fillOpacity: 0.04, interactive: false }).addTo(S.map);
+    const core = L.circle(ll, { radius: m.radius || 30, color: '#6EDFE3', fillColor: '#6EDFE3', weight: 2, fillOpacity: 0.1, interactive: false }).addTo(S.map);
     const marker = L.marker(ll, {
       icon: L.divIcon({
         className: 'stop-icon',
@@ -641,7 +640,7 @@ function drawStops() {
       }),
     }).addTo(S.map);
     marker.on('click', () => onStopMarkerClick(m.id));
-    S.stopLayers[m.id] = { marker, bleed, dropoff, highpoint };
+    S.stopLayers[m.id] = { marker, fade, core };
   });
 }
 
@@ -662,7 +661,7 @@ function onStopMarkerClick(id) {
   const m = S.markersById[id];
   if (!m) return;
   const dist = S.lat != null ? haversine(S.lat, S.lon, m.lat, m.lon) : Infinity;
-  if (dist <= (m.bleed_radius_m || 40)) {
+  if (dist <= (m.fade_radius || 80)) {
     S.dismissedStopId = null;
     setActiveStop(id, dist);
   } else {
@@ -671,23 +670,22 @@ function onStopMarkerClick(id) {
 }
 
 /* ═══════════════ proximity / audio zones ═══════════════ */
+/* Cosmetic 3-way split for marker colour: idle (outside the fade radius),
+   approaching (inside fade, outside core), active (inside the core). The
+   actual <audio> volume is a continuous crossfade, not tied to these steps. */
 function zoneState(m, dist) {
-  if (dist <= (m.highpoint_radius_m || 12)) return 'peak';
-  if (dist <= (m.dropoff_radius_m || 25)) return 'dropoff';
-  if (dist <= (m.bleed_radius_m || 40)) return 'bleed';
+  if (dist <= (m.radius ?? 30)) return 'active';
+  if (dist <= (m.fade_radius ?? 80)) return 'approaching';
   return 'idle';
 }
-function zoneVolume(m, dist, state) {
-  if (state === 'peak') return 1;
-  if (state === 'dropoff') {
-    const t = 1 - (dist - m.highpoint_radius_m) / Math.max(1, m.dropoff_radius_m - m.highpoint_radius_m);
-    return DROPOFF_VOL + (1 - DROPOFF_VOL) * Math.max(0, Math.min(1, t));
-  }
-  if (state === 'bleed') {
-    const t = 1 - (dist - m.dropoff_radius_m) / Math.max(1, m.bleed_radius_m - m.dropoff_radius_m);
-    return DROPOFF_VOL * Math.max(0, Math.min(1, t));
-  }
-  return 0;
+function zoneVolume(m, dist) {
+  const core = m.radius ?? 30;
+  const fade = Math.max(core + 1, m.fade_radius ?? 80);
+  const volC = (m.vol_center ?? 100) / 100;
+  const volE = (m.vol_edge ?? 0) / 100;
+  if (dist <= core) return volC;
+  if (dist <= fade) return volE + (volC - volE) * (1 - (dist - core) / (fade - core));
+  return volE;
 }
 
 function checkZones() {
@@ -699,7 +697,7 @@ function checkZones() {
     const dist = haversine(S.lat, S.lon, m.lat, m.lon);
     if (dist < nearestDist) { nearestDist = dist; nearest = m; }
     const state = zoneState(m, dist);
-    paintStopMarker(m.id, state === 'idle' ? 'idle' : (state === 'bleed' ? 'approaching' : 'active'), state);
+    paintStopMarker(m.id, state);
 
     if (m.id === S.dismissedStopId && state === 'idle') S.dismissedStopId = null; // left, can re-trigger later
     if (state !== 'idle' && dist < bestActiveDist) { bestActiveDist = dist; bestActive = m; }
@@ -713,7 +711,7 @@ function checkZones() {
   } else if (S.activeStopId) {
     const active = S.markersById[S.activeStopId];
     const activeDist = active ? haversine(S.lat, S.lon, active.lat, active.lon) : Infinity;
-    if (activeDist > (active?.bleed_radius_m || 40) * EXIT_HYSTERESIS) {
+    if (activeDist > (active?.fade_radius || 80) * EXIT_HYSTERESIS) {
       clearActiveStop();
     }
   } else {
@@ -721,7 +719,7 @@ function checkZones() {
   }
 }
 
-function paintStopMarker(id, cls, zoneStateName) {
+function paintStopMarker(id, cls) {
   const dot = document.getElementById('dot-' + id);
   if (dot) {
     dot.className = 'stop-dot' + (cls === 'idle' ? '' : ' ' + cls);
@@ -732,9 +730,8 @@ function paintStopMarker(id, cls, zoneStateName) {
   const layers = S.stopLayers[id];
   if (!layers) return;
   const color = cls === 'active' ? '#46968A' : cls === 'approaching' ? '#8BD03F' : '#6EDFE3';
-  layers.bleed.setStyle({ color, opacity: zoneStateName === 'bleed' ? 0.8 : 0.35 });
-  layers.dropoff.setStyle({ color, fillColor: color, opacity: 0.5, fillOpacity: zoneStateName === 'dropoff' || zoneStateName === 'peak' ? 0.16 : 0.06 });
-  layers.highpoint.setStyle({ fillColor: color, fillOpacity: zoneStateName === 'peak' ? 0.28 : 0.12 });
+  layers.fade.setStyle({ color, fillColor: color });
+  layers.core.setStyle({ color, fillColor: color, fillOpacity: cls === 'active' ? 0.22 : 0.1 });
 }
 
 /* ═══════════════ sheet: idle ═══════════════ */
@@ -780,10 +777,9 @@ function clearActiveStop() {
 }
 
 function updateActiveVolume(m, dist) {
-  const state = zoneState(m, dist);
-  paintStopMarker(m.id, state === 'idle' ? 'idle' : (state === 'bleed' ? 'approaching' : 'active'), state);
+  paintStopMarker(m.id, zoneState(m, dist));
   if (S.audio && S.audio.dataset.stopId === m.id) {
-    S.audio.volume = zoneVolume(m, dist, state);
+    S.audio.volume = zoneVolume(m, dist);
   }
 }
 
@@ -807,14 +803,15 @@ function stopAudio() {
 function bindAudio(m) {
   if (S.audio && S.audio.dataset.stopId === m.id) { paintIcon(!S.audio.paused); return; }
   stopAudio();
-  if (!m.audio_url) {
+  const audioUrl = m.type === 'audio' ? m.media_url : null;
+  if (!audioUrl) {
     $('durTime').textContent = '0:00';
     $('curTime').textContent = '0:00';
     $('progressFill').style.width = '0%';
     paintIcon(false);
     return;
   }
-  const a = new Audio(m.audio_url);
+  const a = new Audio(audioUrl);
   a.dataset.stopId = m.id;
   a.preload = 'auto';
   a.volume = 0;
